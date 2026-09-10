@@ -30,6 +30,7 @@ public static class ChartHandler
                 .OrderBy(x => x.Key)
                 .Select(x => x.Value)
                 .ToList();
+        
         Logger.Log("orded rows:" + orderedRows.Count);
 
         for (int i = 0; i < orderedRows.Count -1; i++)

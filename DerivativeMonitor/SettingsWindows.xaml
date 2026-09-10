@@ -47,7 +47,7 @@
                                 <TextBox Text="{Binding TicketSuffix}"/>
                             </StackPanel>
                         </GroupBox>
-                        
+
                         <GroupBox  Margin="6">
                             <GroupBox.Header>
                                 <local:LabelHelper LabelText="Parametros WEB" HelpText="Parâmetros de configuração dos parametros de busca na internet"   Margin="0 0 0 0"/>
@@ -112,9 +112,13 @@
                                 <CheckBox IsChecked="{Binding debugSteps}" Margin="0 6 0 0">
                                     <local:LabelHelper LabelText="Logs de passos (debugSteps)" HelpText="Imprime no arquivo de log cada etapa que esta sendo executada"   Margin="0 0 0 0"/>
                                 </CheckBox>
+
+                                <CheckBox IsChecked="{Binding generatesRandomData}" Margin="0 6 0 0">
+                                    <local:LabelHelper LabelText="Gerar dados aleatórios" HelpText="Gera dados aleatórios retornados para tópico do RTD para teste"   Margin="0 0 0 0"/>
+                                </CheckBox>
                             </StackPanel>
                         </GroupBox>
-                        
+
                         <GroupBox ToolTip="Configurações de log, utilizar somente para fins de depuração, recomendado deixar desligado para auemtnar desempenho" Margin="6">
                             <GroupBox.Header>
                                 <local:LabelHelper LabelText="Banco de dados" HelpText="Parametros relativos ao banco de dados"  />
@@ -124,7 +128,95 @@
                                 <TextBox Text="{Binding DatabasePath}"/>
                             </StackPanel>
                         </GroupBox>
-                        
+
+                        <GroupBox ToolTip="Aba utiliazada para realizar o controle de alertas do programa" Margin="6">
+                            <GroupBox.Header>
+                                <local:LabelHelper LabelText="Controle de Alertas" HelpText="Parametros relativos ao controle de alertas"  />
+                            </GroupBox.Header>
+                            <StackPanel Margin="6">
+                                <local:LabelHelper LabelText="Desvios padrão" HelpText="Quantos desvios padrão para acionar o alerta"   Margin="0 8 0 0"/>
+                                <TextBox Text="{Binding AlertControl.StandardDeviation}"/>
+                                <GroupBox>
+                                    <GroupBox.Header>
+                                        <local:LabelHelper LabelText="Data de inicio do calculo" HelpText="Esse parametro define a partir de que data deseja calcular os desvios&#x0a;Caso queira desconsiderar valores antigos, se esse valor for 01/01/2025 por exemplo &#x0a;apenas registros criados apos essa data inclusive serão considerados"   Margin="0 8 0 0"/>
+                                    </GroupBox.Header>
+                                    <StackPanel>
+
+                                        <CheckBox
+            Content="1 ano"
+            IsChecked="{Binding AlertControl.HistoricRanges.OneYear}"
+            Margin="0,5"/>
+
+                                        <CheckBox
+            Content="6 Meses"
+            IsChecked="{Binding AlertControl.HistoricRanges.SixMonths}"
+            Margin="0,5"/>
+
+                                        <CheckBox
+            Content="3 Meses"
+            IsChecked="{Binding AlertControl.HistoricRanges.ThreeMonths}"
+            Margin="0,5"/>
+
+                                        <CheckBox
+                                                Content="Total"
+                                                IsChecked="{Binding AlertControl.HistoricRanges.Total}"
+                                                Margin="0,5"/>
+
+                                        <StackPanel
+                                            Orientation="Horizontal"
+                                            Margin="0,5">
+
+                                            <CheckBox
+                                                Content="Customizado:"
+                                                IsChecked="{Binding AlertControl.HistoricRanges.Custom}"
+                                                VerticalAlignment="Center"/>
+
+                                            <TextBox
+                                                Width="60"
+                                                Margin="10,0,5,0"
+                                                Text="{Binding AlertControl.HistoricRanges.CustomDays}"
+                                                VerticalContentAlignment="Center"/>
+
+                                            <TextBlock
+                Text="days"
+                VerticalAlignment="Center"/>
+
+                                        </StackPanel>
+
+                                    </StackPanel>
+
+                                </GroupBox>
+                                <local:LabelHelper LabelText="Parametro de controle" HelpText="Para o monitoramento e alerta. Apenas o atributo selecionado será utilizado" Margin="0"/>
+
+                                <ComboBox ItemsSource="{Binding AvailableCodes, RelativeSource={RelativeSource AncestorType=Window}}"
+                                    SelectedItem="{Binding AlertControl.ParameterControl, UpdateSourceTrigger=PropertyChanged}"/>
+                                <CheckBox IsChecked="{Binding AlertControl.EnableSoundAlert}" Margin="0 6 0 0">
+                                    <local:LabelHelper LabelText="Alertas de som " HelpText="Ativa ou desativa os alertas sonoros"   Margin="0 0 0 0"/>
+                                </CheckBox>
+                                <CheckBox IsChecked="{Binding AlertControl.EnableSpeechAlert}" Margin="0 6 0 0">
+                                    <local:LabelHelper LabelText="Alertas de fala " HelpText="Ativa ou desativa os alertas de fala"   Margin="0 0 0 0"/>
+                                </CheckBox>
+                            </StackPanel>
+                        </GroupBox>
+                        <GroupBox ToolTip="Aba utiliazada para realizar o controle de alertas do programa" Margin="6">
+                            <GroupBox.Header>
+                                <local:LabelHelper LabelText="Controle de Alertas" HelpText="Parametros relativos ao controle de alertas"  />
+                            </GroupBox.Header>
+                            <StackPanel Margin="6">
+                                <DataGrid
+                                    x:Name="stocksToMonitorGrid"
+                                      AutoGenerateColumns="False"
+                                      ItemsSource="{Binding AlertControl.StocksToMonitor}"
+                                      CanUserAddRows="True"
+                                      HeadersVisibility="Column"
+                                      Height="160">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Ativos a ser Monitorados" Binding="{Binding Symbol, UpdateSourceTrigger=PropertyChanged}" Width="*"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </StackPanel>
+                        </GroupBox>
+
                     </UniformGrid>
                     <GroupBox Margin="6">
                         <GroupBox.Header>
@@ -134,10 +226,10 @@
                               AutoGenerateColumns="False"
                               CanUserAddRows="True"
                               HeadersVisibility="Column"
-                              Height="160">
+                              Height="160" SelectionChanged="CallParametersGrid_SelectionChanged">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Parameter" Binding="{Binding Parameter}" Width="*"/>
-                                <DataGridTextColumn Header="Value"     Binding="{Binding Value}"     Width="*"/>
+                                <DataGridTextColumn Header="Descrição da Grade" Binding="{Binding Parameter}" Width="*"/>
+                                <DataGridTextColumn Header="Atributo (ULT,ABE, CAB e Etc.)"     Binding="{Binding Value}"     Width="*"/>
                                 <DataGridTemplateColumn Width="*">
                                     <DataGridTemplateColumn.Header>
                                         <local:LabelHelper LabelText="Formato do campo" HelpText="Define o formato do campo para exibição na grade, os formatos disponíveis são: money_us -> US$ 1,000.00 &#x0a; money_br -> R$ 1.000,00 &#x0a; number -> 1,000 &#x0a; percent - > 100% &#x0a; integer-> 100&#x0a; date -> 10/01/2023 &#x0a;e text = 1000" Margin="0"/>
@@ -155,7 +247,7 @@
 
                     <GroupBox Margin="6">
                         <GroupBox.Header>
-                            <local:LabelHelper LabelText="Parâmetros Call" HelpText="Parametros que pertencem às opções de compra&#x0a;Ex: 'Preço de Bertura': 'ABE' &#x0a;OBS: Parâmetros inexistentes não causam erros, porém nenhum valor é retornado"   Margin="0 0 0 0"/>
+                            <local:LabelHelper LabelText="Parâmetros Put" HelpText="Parametros que pertencem às opções de venda&#x0a;Ex: 'Preço de Bertura': 'ABE' &#x0a;OBS: Parâmetros inexistentes não causam erros, porém nenhum valor é retornado"   Margin="0 0 0 0"/>
                         </GroupBox.Header>
                         <DataGrid x:Name="PutParametersGrid"
                           AutoGenerateColumns="False"
@@ -163,8 +255,8 @@
                           HeadersVisibility="Column"
                           Height="160">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Parameter" Binding="{Binding Parameter}" Width="*"/>
-                                <DataGridTextColumn Header="Value"     Binding="{Binding Value}"     Width="*"/>
+                                <DataGridTextColumn Header="Descrição da Grade" Binding="{Binding Parameter}" Width="*"/>
+                                <DataGridTextColumn Header="Atributo (ULT,ABE, CAB e Etc.)"     Binding="{Binding Value}"     Width="*"/>
                                 <DataGridTemplateColumn Width="*">
                                     <DataGridTemplateColumn.Header>
                                         <local:LabelHelper LabelText="Formato do campo" HelpText="Define o formato do campo para exibição na grade, os formatos disponíveis são: money_us -> US$ 1,000.00 &#x0a; money_br -> R$ 1.000,00 &#x0a; number -> 1,000 &#x0a; percent - > 100% &#x0a; integer-> 100&#x0a; date -> 10/01/2023 &#x0a;e text = 1000" Margin="0"/>

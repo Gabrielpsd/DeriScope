@@ -1,5 +1,7 @@
 ﻿using RTDTrading;
+using SQLitePCL;
 using System.Collections.ObjectModel;
+using System.Reflection.Metadata;
 
 public class RTDClient
 {
@@ -11,6 +13,8 @@ public class RTDClient
     public bool IsRtdConnected => _serverState == 1;
 
     private Dictionary<int, TopicBinding> _topicBindings = new();
+
+    private int lastConnectedTopic = 0;
     public RTDClient()
     {
         //empty constructor
@@ -57,7 +61,7 @@ public class RTDClient
         });
     }
 
-    public async Task ConnectDataToRTd(List<OptionsMonitored> optionsToConnect, AppConfig _appConfig, Dictionary<decimal, ChartRow> _chartLookup, StockData _stockData)
+    public async Task ConnectDataToRTd(List<OptionsMonitored> optionsToConnect, AppConfig _appConfig, Dictionary<decimal, ChartRow> _chartLookup, StockData _stockData, List<BackgroundOption> monitoredTopics)
     {
         if (_rtdServer == null) return;
 
@@ -77,15 +81,32 @@ public class RTDClient
             _chartLookup[option.Strike] = new ChartRow{ Strike = option.Strike };
 
             if (!string.IsNullOrEmpty(option.CallCodigo))
-                topicId = ConnectSide(option, isCall: true, _appConfig, _chartLookup, topicId);
+                topicId = ConnectSide(option, isCall: true, _appConfig, _chartLookup, topicId, monitoredTopics);
 
             if (!string.IsNullOrEmpty(option.PutCodigo))
-                topicId = ConnectSide(option, isCall: false, _appConfig, _chartLookup, topicId);
+                topicId = ConnectSide(option, isCall: false, _appConfig, _chartLookup, topicId, monitoredTopics);
 
         }
+
+        lastConnectedTopic = topicId;
     }
 
-    private int ConnectSide(OptionsMonitored option, bool isCall, AppConfig appConfig, Dictionary<decimal, ChartRow> chartLookup, int topicId)
+    public async Task ConnectBackgroundOptions(AppConfig appConfig, BackgroundOption monitoredTopic)
+    {
+        if (_rtdServer == null) return;
+
+        int topicId = lastConnectedTopic; 
+
+        object? result = _rtdServer.ConnectData(topicId, new object[] { monitoredTopic.optionTicker + appConfig.DerivativesSuffix, monitoredTopic.parameter }, true);
+        string formatted = FieldFormatter.Format(result?.ToString(), "number");
+        monitoredTopic.value = Convert.ToDecimal(formatted);
+        monitoredTopic.topicId = topicId;
+        lastConnectedTopic++;
+
+
+    }
+
+    private int ConnectSide(OptionsMonitored option, bool isCall, AppConfig appConfig, Dictionary<decimal, ChartRow> chartLookup, int topicId, List<BackgroundOption> monitoredTopics)
     {
 
         string side = isCall ? option.CallCodigo : option.PutCodigo;
@@ -102,10 +123,16 @@ public class RTDClient
         {
             Array topic = new object[] { side + appConfig.DerivativesSuffix, parameter.Value };
             object? raw = _rtdServer!.ConnectData(topicId, topic, true);
+            
             string formatted = FieldFormatter.Format(raw?.ToString(), fieldFormats[parameter.Value]);
+            
+            //Add the topic to the monitored list 
+            if(parameter.Value == appConfig.AlertControl.ParameterControl)
+                monitoredTopics.Add(new BackgroundOption { stock = appConfig.Ticker, optionTicker = side, parameter = parameter.Value, value = Convert.ToDecimal(formatted), topicId = topicId });
 
             parameters[parameter.Value] = formatted;
             topics[topicId.ToString()] = parameter.Value;
+
 
             if (parameter.Value == appConfig.Chart.Parameter.ToString())
             {
@@ -129,11 +156,11 @@ public class RTDClient
         return topicId;
     }
 
-    public void UpdateRtdData(ObservableCollection<OptionsMonitored> optionsBeingMonitored, AppConfig _appConfig, StockData _stockData)
+    public Dictionary<int, string> UpdateRtdData(AppConfig _appConfig)
     {
-        if (_rtdServer == null) return;
+        if (_rtdServer == null) return null;
 
-
+        Dictionary<int, string> topicsReturned = new Dictionary<int, string>();
         int topicsToRefresh = 0;
 
         object[,]? result_justCallingRefresh = (object[,]?)_rtdServer.RefreshData(ref topicsToRefresh);
@@ -150,12 +177,8 @@ public class RTDClient
                     object topicValue = result_justCallingRefresh[1, columnIndex]?.ToString() ?? "";
 
                     Logger.Log($"Received topic ID: {topicId}, value: {topicValue} from RefreshData");
-                    if ((int)topicId == 2)
-                    {
-                        _stockData.LastPrice = FieldFormatter.Format(topicValue.ToString(), "money_br");
-                        Logger.Log($"Updated stock price with value: {_stockData.LastPrice}");
-                    }
-                    else if (_topicBindings.TryGetValue((int)topicId, out var binding))
+
+                    if (_topicBindings.TryGetValue((int)topicId, out var binding))
                     {
                         if (binding.IsCall)
                         {
@@ -170,13 +193,15 @@ public class RTDClient
                     }
                     else
                     {
-                        Logger.Log($"No binding found for topic ID: {topicId}");
+                        topicsReturned.Add(Convert.ToInt32(topicId), topicValue.ToString() ?? "");
                     }
+
                 }
 
             }
         }
 
+        return topicsReturned;
     }
 
     public class TopicBinding

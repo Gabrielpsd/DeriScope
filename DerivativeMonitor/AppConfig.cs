@@ -1,4 +1,6 @@
-﻿public class AppConfig
+﻿using System.Collections.ObjectModel;
+
+public class AppConfig
 {
     // ticker do ativo que se deseja obter as opções, ex: AAPL, MSFT, etc.
     public string Ticker { get; set; } = "";
@@ -36,6 +38,8 @@
     // opção para habilitar ou desabilitar logs dos passos do processo (início do scraping, início da atualização, etc.), ex: true para habilitar logs detalhados, false para desabilitar.
     public bool debugSteps { get; set; } = false;
 
+    public bool generatesRandomData { get; set; } = false;
+
     public Dictionary<string, string> CallParametersToMonitor { get; set; } = new Dictionary<string, string>();
 
     public Dictionary<string, string> PutParametersToMonitor { get; set; } = new Dictionary<string, string>();
@@ -45,7 +49,9 @@
 
     public UiColors Colors { get; set; } = new UiColors();
 
-  public ChartSettings Chart { get; set; } = new ChartSettings();
+    public ChartSettings Chart { get; set; } = new ChartSettings();
+
+    public AlertControl AlertControl { get; set; } = new AlertControl();
 }
 
 public class UiColors
@@ -83,4 +89,63 @@ public class ChartSettings {
 
     public string YAxisTitle { get; set; } = "Quantidade de contratos";
 
+}
+
+// Used on the AlertControl class to specify which stocks to monitor for alerts.
+public class StockToMonitor
+{
+    public string Symbol { get; set; } = "";
+}
+
+// AlertControl class to manage alert settings such as average control, sound and visual alerts, and email notifications.
+public class AlertControl
+{
+    public float StandardDeviation { get; set; } = 1.5f; // Control for variance, default is 0.1
+
+    public string StartDate { get; set; } = DateTime.Now.AddDays(-365).ToString("yyyy-MM-dd"); // Start date for alert control, default is 30 days ago
+
+    public ObservableCollection<StockToMonitor> StocksToMonitor { get; set; } = new() ; // List of stocks to monitor for alerts, default is empty
+    public string ParameterControl { get; set; } = "CAB"; // Parameter to control for alerts, default is "CAB"
+    public string SoundFilePath { get; set; } = "alert.wav"; // Path to the sound file for alerts, default is "alert.wav"
+
+    public bool EnableSoundAlert { get; set; } = true; // Enable or disable sound alerts, default is true
+
+    public bool EnableSpeechAlert { get; set; } = true;
+
+    public HistoricRanges HistoricRanges { get; set; } = new HistoricRanges(); // Ranges for historical data, default is 30 days
+
+    public Dictionary<string, DateTime?> GetSelectedCutoffs()
+    {
+        var cutoffs = new Dictionary<string,DateTime?>();
+
+        DateTime now = DateTime.Now;
+
+        if (HistoricRanges.OneYear)
+            cutoffs.Add("um Ano",now.AddYears(-1));
+
+        if (HistoricRanges.SixMonths)
+            cutoffs.Add("Seis meses", now.AddMonths(-6));
+
+        if (HistoricRanges.ThreeMonths)
+            cutoffs.Add("Três meses", now.AddMonths(-3));
+
+        if (HistoricRanges.Total)
+            cutoffs.Add("Total", DateTime.Parse("01/01/1900"));
+
+        if (HistoricRanges.Custom)
+            cutoffs.Add($"Customizado de {HistoricRanges.CustomDays} dias", now.AddDays(-HistoricRanges.CustomDays));
+
+        return cutoffs;
+    }
+}
+
+
+public class HistoricRanges        // each checkbox; several can be true at once
+{
+    public bool OneYear { get; set; }
+    public bool SixMonths { get; set; }
+    public bool ThreeMonths { get; set; } = true;
+    public bool Total { get; set; }
+    public bool Custom { get; set; }
+    public int CustomDays { get; set; } = 30;
 }

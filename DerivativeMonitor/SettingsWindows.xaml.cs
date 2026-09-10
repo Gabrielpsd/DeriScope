@@ -89,6 +89,10 @@ namespace DerivativeMonitor
             DialogResult = true;
         }
 
+        private void CallParametersGrid_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+
+        }
     }
 
     public class ParameterRow

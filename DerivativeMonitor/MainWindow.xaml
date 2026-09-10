@@ -9,7 +9,7 @@
         xmlns:local="clr-namespace:DerivativeMonitor"
         xmlns:wpf="clr-namespace:ScottPlot.WPF;assembly=ScottPlot.WPF"
         mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="1486" Loaded="Window_Loaded">
+        Title="Monitor de derivativos" Height="450" Width="1486" Loaded="Window_Loaded">
     <Grid>
 
         <!-- ROWS -->
@@ -182,16 +182,18 @@
                    FontWeight="Bold"
                    VerticalAlignment="Center" Width="77"/>
 
+                <local:AlertMark  x:Name="alertMark" HelpText="" Visibility="Hidden"/>
+
             </StackPanel>
             <Border x:Name="LoadingOverlay"
                 Background="#CC1E1E2E"
                 Visibility="Hidden"
-                Panel.ZIndex="100" Width="277">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="276">
+                Panel.ZIndex="100" Width="313">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="314">
                     <TextBlock x:Name="LoadingStatusText"
                    Text="Carregando..."
-                   Foreground="White" FontSize="13"
-                   HorizontalAlignment="Center"/>
+                   Foreground="White" FontSize="11"
+                   HorizontalAlignment="Center" TextAlignment="Center"/>
                     <ProgressBar x:Name="LoadingProgressBar" Minimum="0" Maximum="100" Value="0" Height="11"/>
                 </StackPanel>
             </Border>

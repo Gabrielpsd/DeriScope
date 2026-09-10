@@ -1,26 +1,43 @@
 ﻿public static class ProgramInterface
 {
-    public static string readTicker()
+    public static async Task<List<BackgroundOption>> MapsBackgroundOptions(string stockTicker, AppConfig appConfig)
     {
-        string? ticker;
+        List<BackgroundOption> monitoredTopics = new List<BackgroundOption>();
+        Logger.Log("Conectin background Data");
 
-        do
+
+        var URLRequest = $"{appConfig.BaseUrl}{stockTicker}";
+        Logger.Log("Connectin data for stock: " + stockTicker);
+        var data = await Web_Scrapper.GetData(URLRequest);
+        Logger.Log("Data received for stock: " + data.Substring(0, Math.Min(20, data.Length)) + "..."); // Log the first 20 characters of the data
+        var options = OptionMapper.extractDataFromHTML(data, appConfig.PutOptionTableOnWeb, appConfig.CallOptionTableOnWeb);
+        Logger.Log("Options data extracted successfully for ticker: " + stockTicker);
+
+
+        Logger.Log("Populating background options");
+        foreach(var option in options.CallOptions ?? Enumerable.Empty<OptionData>())
         {
-            Console.Write("Enter a ticker: ");
-            ticker = Console.ReadLine();
-            if (ticker == null || ticker.Length != 4)
+            monitoredTopics.Add(new BackgroundOption
             {
-                Console.WriteLine("****--------------- Ticket digitado invalido ---------------------**** ");
-                Console.WriteLine("Formatos (exemplos):    PETR   |    RANI   |    BBAS |   ITUB    |");
+                stock = stockTicker,
+                optionTicker = option.Codigo,
+                parameter = appConfig.AlertControl.ParameterControl,
+            });
+        }
+        foreach(var option in options.PutOptions ?? Enumerable.Empty<OptionData>())
+        {
+            monitoredTopics.Add(new BackgroundOption
+            {
+                stock = stockTicker,
+                optionTicker = option.Codigo,
+                parameter = appConfig.AlertControl.ParameterControl,
+            });
+        }
+      
 
-            }
-            else
-                break;
-
-        } while (true);
-
-        return ticker;
+        return monitoredTopics;
     }
+
     public static async Task<Options> PopulatesOptionObject(string ticker, AppConfig config)
     {
         var URLRequest = $"{config.BaseUrl}{ticker}";
