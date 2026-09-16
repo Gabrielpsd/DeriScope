@@ -20,7 +20,6 @@ namespace DerivativeMonitor
     /// </summary>
     public partial class MainWindow : System.Windows.Window
     {
-        private Options options = new Options();
         private CancellationTokenSource _cts = new();
         private AppConfig _appConfig = new AppConfig();
         private bool loopingIsRunning = false;
@@ -47,7 +46,7 @@ namespace DerivativeMonitor
 
         private List<BackgroundOption> _backgroundOptionList = new();
 
-        private AlertWindow _alertWindow;
+        private AlertWindow? _alertWindow;
 
         SoundPlayer player = new SoundPlayer("Assets/Sounds/alert.wav");
 
@@ -265,8 +264,7 @@ namespace DerivativeMonitor
                                     player.Play();
                                 }
 
-                                Dispatcher.Invoke(() =>
-                                _alerts.Add(new Alert
+                                Alert _alert = new Alert
                                 {
                                     Ticker = backgroundOption.optionTicker,
                                     Value = topicValueDouble,
@@ -274,7 +272,12 @@ namespace DerivativeMonitor
                                     Time = DateTime.Now,
                                     Message = cutOffDate.Key,
                                     Average = backgroundOption.average,
-                                }));
+                                };
+
+                                Dispatcher.Invoke(() =>
+                                _alerts.Add(_alert));
+
+                                _dataBaseManager.SaveTriggeredAlert(_alert, backgroundOption.optionTicker, backgroundOption.stock);
 
                                 if(_appConfig.AlertControl.EnableSpeechAlert)
                                 {
@@ -351,20 +354,25 @@ namespace DerivativeMonitor
 
             // 2) Download the option chain (network I/O)
             progress.Report(new LoadStatus(20, "Baixando cadeia de opções..."));
-            options = await ProgramInterface.PopulatesOptionObject(_appConfig.Ticker, _appConfig);
+            var data = await Web_Scrapper.GetData($"{_appConfig.BaseUrl}{_appConfig.Ticker}");
 
             progress.Report(new LoadStatus(30, "Salvando opções no banco de dados"));
 
-            if(options.CallOptions == null || options.PutOptions == null || options.CallOptions.Count == 0 || options.PutOptions.Count == 0)
+            var callOptions = await OptionMapper.extractCallDataFromHTMLAsync(data, _appConfig.CallOptionTableOnWeb, _dataBaseManager);
+            var putOptions = await OptionMapper.extractPutDataFromHTMLAsync(data, _appConfig.PutOptionTableOnWeb, _dataBaseManager);
+
+            if(callOptions.Count == 0 || putOptions.Count == 0)
             {
                 Logger.Log("Failed to populate option object.");
-                options = _dataBaseManager.GetData(_appConfig);
-                alertMark.HelpText = alertMark.HelpText + "Falha ao baixar a cadeia de opções. Usando dados do banco de dados local.";
+                string lastSuccessfullWebScrapping = _dataBaseManager.getLastSuccessfullWebScrapping(_appConfig.Ticker);
+                alertMark.HelpText = alertMark.HelpText + "Falha ao baixar a cadeia de opções. Usando dados do banco de dados local. &#x0a; Ultima requisição - Ativo : Data &#x0a; -> " + _appConfig.Ticker + lastSuccessfullWebScrapping;
                 alertMark.Visibility = System.Windows.Visibility.Visible;
+                callOptions = _dataBaseManager.GetoptionOndDatabaseData(_appConfig.Ticker, true);
+                putOptions = _dataBaseManager.GetoptionOndDatabaseData(_appConfig.Ticker, false);
             }
             else
             {
-                _dataBaseManager.SaveOptions(_appConfig.DatabasePath, _appConfig.Ticker, options);
+                _dataBaseManager.saveLastSuccessfullWebScrapping(_appConfig.Ticker, DateTime.Now);
             }
 
             progress.Report(new LoadStatus(40, "Construindo colunas dinâmicas..."));
@@ -372,13 +380,14 @@ namespace DerivativeMonitor
 
             // 3) Build grid rows (CPU) on a background thread
             progress.Report(new LoadStatus(50, "Montando as linhas de opções..."));
-            var rows = await Task.Run(() => OptionMapper.BuildOptionRows(options, _appConfig));
+            var rows = await Task.Run(() => OptionMapper.BuildOptionRows(callOptions,putOptions));
 
             // 4) Connect topics (heavy COM) on a background thread — this is what used to freeze
             progress.Report(new LoadStatus(60, "Conectando dados ao RTD..."));
             _chartLookup.Clear();
+            Logger.Log("Verifying chart lookup before RTd:"+ _chartLookup.Count);
             await Task.Run(() => _rtdClient.ConnectDataToRTd(rows, _appConfig, _chartLookup, _stockData, _backgroundOptionList));
-
+            Logger.Log("Verifying chart lookup outside RTd:" + _chartLookup.Count);
 
             // 5) Fill the UI — we are back on the UI thread after the await, so this is safe
             progress.Report(new LoadStatus(65, "Preenchendo a grade e o gráfico..."));
@@ -391,8 +400,10 @@ namespace DerivativeMonitor
             LabelClose.Content = _stockData.LastPrice;
             LabelOpening.Content = _stockData.OpeningPrice;
             Logger.Log("Stock Data" + _stockData);
+#pragma warning disable CS8601 // Possible null reference assignment.
             _priceLine = null;
             ChartHandler.BuildChart(_chartLookup, _appConfig, WpfPlot1, _stockData, ref _priceLine);
+#pragma warning restore CS8601 // Possible null reference assignment.
             _orderedChartRows = _chartLookup.OrderBy(x => x.Key).Select(x => x.Value).ToList(); ;
 
             _hoverCrosshair = WpfPlot1.Plot.Add.Crosshair(0, 0);
@@ -417,9 +428,22 @@ namespace DerivativeMonitor
 
             foreach (var stock in _appConfig.AlertControl.StocksToMonitor)
             {
+                List<BackgroundOption> auxList = new List<BackgroundOption>();
                 progress.Report(new LoadStatus(70, "Connectando ativo " + stock.Symbol));
                 Logger.Log($"Loading background options for stock: {stock}");
-                tempOptionList.AddRange(await ProgramInterface.MapsBackgroundOptions(stock.Symbol, _appConfig));
+                auxList = await ProgramInterface.MapsBackgroundOptions(stock.Symbol, _appConfig,_dataBaseManager);
+                if(auxList != null && auxList.Count > 0)
+                {
+                    _dataBaseManager.saveLastSuccessfullWebScrapping(stock.Symbol, DateTime.Now);
+                    tempOptionList.AddRange(auxList);
+                }
+                else
+                {
+                    _dataBaseManager.saveLastSuccessfullWebScrapping(stock.Symbol, DateTime.Now);
+                    alertMark.HelpText = alertMark.HelpText + "&#x0a; -> "+stock.Symbol + " : " + _dataBaseManager.getLastSuccessfullWebScrapping(stock.Symbol);
+                    Logger.Log($"No background options found for stock: {stock}");
+                }
+
             }
 
             Logger.Log("Connecting background options...");
@@ -445,7 +469,6 @@ namespace DerivativeMonitor
 
             foreach (var option in _backgroundOptionList)
             {
-                Logger.Log($"Saving option history for {option.optionTicker}|{option.stock}|{option.topicId}|");
                 _dataBaseManager.SaveOptionHistory(option);
                 progress.Report(new LoadStatus(int.Parse(Math.Round(80+auxiliar).ToString()), $"Atualizando Series historicas {tempCount}/{_backgroundOptionList.Count}"));
                 _dataBaseManager.GetOptionHistoryVariation(option, System.DateTime.Parse(_appConfig.AlertControl.StartDate, CultureInfo.InvariantCulture)); // Example cutoff time
@@ -569,7 +592,7 @@ namespace DerivativeMonitor
                         Logger.Log($"Topics returned: {string.Join(", ", topicsReturned.Select(kvp => $"[{kvp.Key}: {kvp.Value}]"))}");
                         if (topicsReturned != null && topicsReturned.Count > 0 )
                         {
-                            handleRtdupdates(topicsReturned);
+                            _ = handleRtdupdates(topicsReturned);
                         }
                     }
 
@@ -592,12 +615,6 @@ namespace DerivativeMonitor
                 {
                     Logger.Log("Refreshing options from website...");
 
-                    var options = await ProgramInterface.PopulatesOptionObject(_appConfig.Ticker, _appConfig);
-
-                    if (options != null)
-                    {
-
-                    }
                 }
                 catch (Exception ex)
                 {

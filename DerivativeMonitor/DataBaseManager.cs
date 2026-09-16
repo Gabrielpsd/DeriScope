@@ -1,5 +1,6 @@
 ﻿using Microsoft.Data.Sqlite;
 using System.Globalization;
+using System.Transactions;
 
 // the columns of database are being defined in portuguese because the data is being fetched from a Brazilian source (B3)
 public class DataBaseManager
@@ -54,20 +55,101 @@ public class DataBaseManager
 
 
         command.ExecuteNonQuery();
+
+        command.CommandText = @"
+        CREATE TABLE IF NOT EXISTS TriggeredAllerts (
+                Ticket     TEXT NOT NULL,
+                Codigo     TEXT NOT NULL,
+                Parametro  TEXT NOT NULL,
+                Valor      REAL NOT NULL,
+                CriadoEm   TEXT NOT NULL,
+                Zscore      REAL NOT NULL,
+                Message     TEXT NOT NULL,
+                Media     REAL NOT NULL
+                    );
+        CREATE INDEX IF NOT EXISTS idx_triggered_alerts ON TriggeredAllerts(Codigo, Parametro, CriadoEm);
+        ";
+
+        command.ExecuteNonQuery();
+
+        command.CommandText = @"
+        CREATE TABLE IF NOT EXISTS lastSuccessfullWebScrapping (
+                Ticket     TEXT NOT NULL,
+                criadoEm   TEXT NOT NULL,
+                PRIMARY KEY (Ticket)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_last_successfull_scrapping ON lastSuccessfullWebScrapping(Ticket);
+        ";
+
+        command.ExecuteNonQuery();
+
         connection.Close();
     }
 
-    public void SaveOptions(string source, string ticket, Options options)
+    public string getLastSuccessfullWebScrapping(string ticket)
     {
-
         this.connection.Open();
-        using var transaction = this.connection.BeginTransaction();
-        // UPSERT
         var cmd = this.connection.CreateCommand();
+        cmd.CommandText = @"
+            SELECT criadoEm
+            FROM lastSuccessfullWebScrapping
+            WHERE Ticket = $ticket
+        ";
+        cmd.Parameters.AddWithValue("$ticket", ticket);
+        using var reader = cmd.ExecuteReader();
+        if (reader.Read())
+        {
+            this.connection.Close();
+            return reader.GetString(0);
+        }
+        else
+        {
+            this.connection.Close();
+            return String.Empty;
+        }
+    }
 
-        var taggedOptions = options.CallOptions.Select(o => (opt: o, tipo: "Call")).Concat(options.PutOptions.Select(o => (opt: o, tipo: "Put")));
-        cmd.Transaction = transaction;
+    public void saveLastSuccessfullWebScrapping(string ticket, DateTime lastSuccessfullWebScrapping)
+    {
+        this.connection.Open();
+        var cmd = this.connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO lastSuccessfullWebScrapping (Ticket, criadoEm)
+            VALUES ($ticket, $criadoEm)
+            ON CONFLICT(Ticket) DO UPDATE SET
+                criadoEm = excluded.criadoEm
+        ";
+        cmd.Parameters.AddWithValue("$ticket", ticket);
+        cmd.Parameters.AddWithValue("$criadoEm", lastSuccessfullWebScrapping.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.ExecuteNonQuery();
+        this.connection.Close();
+    }
 
+    public void SaveTriggeredAlert(Alert alert, string codigo, string parametro)
+    {
+        this.connection.Open();
+        var cmd = this.connection.CreateCommand();
+        cmd.CommandText = @"
+            INSERT INTO TriggeredAllerts (Ticket, Codigo, Parametro, Valor, CriadoEm, Zscore, Message, Media)
+            VALUES ($ticket, $codigo, $parametro, $valor, $criadoEm, $zscore, $message, $media)
+        ";
+        cmd.Parameters.AddWithValue("$ticket", alert.Ticker);
+        cmd.Parameters.AddWithValue("$codigo", codigo);
+        cmd.Parameters.AddWithValue("$parametro", parametro);
+        cmd.Parameters.AddWithValue("$valor", alert.Value);
+        cmd.Parameters.AddWithValue("$criadoEm", alert.Time.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.Parameters.AddWithValue("$zscore", alert.ZScore);
+        cmd.Parameters.AddWithValue("$message", alert.Message);
+        cmd.Parameters.AddWithValue("$media", alert.Average);
+        cmd.ExecuteNonQuery();
+        this.connection.Close();
+    }
+
+    public void SaveOption(string ticket,string codigo,string ISIN, string especificacao, DateTime vencimento, decimal precoExercicio, string referencia, bool protegida, string estilo, string tipo)
+    {
+        this.connection.Open();
+        var cmd = this.connection.CreateCommand();
         cmd.CommandText = @"
             INSERT INTO Options 
             (Ticket, Codigo,TipoOpcao, ISIN, Especificacao, Vencimento, PrecoExercicio, Referencia, Protegida, Estilo,Ativo, CriadoEm, DeletadoEm)
@@ -85,95 +167,52 @@ public class DataBaseManager
                 CriadoEm = excluded.CriadoEm,
                 DeletadoEm = excluded.DeletadoEm;
             ";
+        cmd.Parameters.AddWithValue("$ticket", ticket);
+        cmd.Parameters.AddWithValue("$codigo", codigo);
+        cmd.Parameters.AddWithValue("$isin", ISIN);
+        cmd.Parameters.AddWithValue("$esp", especificacao);
+        cmd.Parameters.AddWithValue("$venc", vencimento.ToString("yyyy-MM-dd"));
+        cmd.Parameters.AddWithValue("$preco", precoExercicio.ToString("#,##0.000", Inv));
+        cmd.Parameters.AddWithValue("$ref", referencia);
+        cmd.Parameters.AddWithValue("$prot", protegida ? 1 : 0);
+        cmd.Parameters.AddWithValue("$estilo", estilo);
+        cmd.Parameters.AddWithValue("$tipo", tipo);
+        cmd.Parameters.AddWithValue("$now", DateTime.Now);
+        cmd.ExecuteNonQuery();
 
-        foreach (var (opt, tipo) in taggedOptions)
-        {
-            cmd.Parameters.Clear();
-
-            cmd.Parameters.AddWithValue("$ticket", ticket);
-            cmd.Parameters.AddWithValue("$codigo", opt.Codigo);
-            cmd.Parameters.AddWithValue("$isin", opt.ISIN);
-            cmd.Parameters.AddWithValue("$esp", opt.Especificacao);
-            cmd.Parameters.AddWithValue("$venc", opt.Vencimento.ToString("yyyy-MM-dd"));
-            cmd.Parameters.AddWithValue("$preco", opt.PrecoExercicio.ToString("#,##0.000", Inv));
-            cmd.Parameters.AddWithValue("$ref", opt.Referencia);
-            cmd.Parameters.AddWithValue("$prot", opt.Protegida ? 1 : 0);
-            cmd.Parameters.AddWithValue("$estilo", opt.Estilo);
-            cmd.Parameters.AddWithValue("$tipo", tipo);
-            cmd.Parameters.AddWithValue("$now", DateTime.Now);
-            cmd.ExecuteNonQuery();
-        }
-
-        // DELETE missing
-        foreach (var (opt, tipo) in taggedOptions)
-        {
-
-            var updateCmd = this.connection.CreateCommand();
-            updateCmd.Transaction = transaction;
-
-            var parameters = taggedOptions.Select((o, i) => $"$c{i}").ToList();
-
-            updateCmd.CommandText = $@"
-            UPDATE Options
-            SET DeletadoEm = $now,
-                Ativo = 0       
-            WHERE Ticket = $ticket
-            AND Codigo NOT IN ({string.Join(",", parameters)})
-            ";
-
-            updateCmd.Parameters.AddWithValue("$ticket", ticket);
-
-            for (int i = 0; i < taggedOptions.Count(); i++)
-            {
-
-                updateCmd.Parameters.AddWithValue($"$c{i}", taggedOptions.ElementAt(i).opt.Codigo);
-            }
-
-            updateCmd.Parameters.AddWithValue("$now", DateTime.Now);
-            updateCmd.ExecuteNonQuery();
-        }
-
-        transaction.Commit();
         this.connection.Close();
     }
 
-    public Options GetData(AppConfig config)
+    public List<OptionData> GetoptionOndDatabaseData(string ticker, bool isCall)
     {
-        var options = new Options();
+        var options = new List<OptionData>();
+
+        var call = isCall ? "Call": "Put";
+
         this.connection.Open();
         var cmd = this.connection.CreateCommand();
         cmd.CommandText = @"
             SELECT Ticket, TipoOpcao, Codigo, ISIN, Especificacao, Vencimento, PrecoExercicio, Referencia, Protegida, Estilo
             FROM Options
-            WHERE Ticket = $ticket AND Ativo = 1
+            WHERE Ticket = $ticket AND Ativo = 1 and TipoOpcao = $call
             Order by PrecoExercicio
         ";
-        cmd.Parameters.AddWithValue("$ticket", config.Ticker);
+        cmd.Parameters.AddWithValue("$ticket", ticker );
+        cmd.Parameters.AddWithValue("$call", call);
+
         using var reader = cmd.ExecuteReader();
+
         while (reader.Read())
         {
             var opt = new OptionData
             {
                 Codigo = reader.GetString(2),
-                ISIN = reader.IsDBNull(3) ? null : reader.GetString(3),
-                Especificacao = reader.IsDBNull(4) ? null : reader.GetString(4),
                 Vencimento = DateTime.Parse(reader.GetString(5)),
                 PrecoExercicio = reader.IsDBNull(6) ? 0 : decimal.Parse(reader.GetString(6), Inv),
-                Referencia = reader.IsDBNull(7) ? null : reader.GetString(7),
-                Protegida = !reader.IsDBNull(8) && reader.GetInt32(8) == 1,
-                Estilo = reader.IsDBNull(9) ? null : reader.GetString(9)
             };
 
-            if (reader.GetString(1) == "Put")
-            {
-                Logger.Log($"Adding Put option: {opt.Codigo} || Preco: {opt.PrecoExercicio} || Vencimento: {opt.Vencimento}");
-                options.PutOptions.Add(opt);
-            }
-            else
-            {
-                Logger.Log($"Adding Call option: {opt.Codigo} || Preco: {opt.PrecoExercicio} || Vencimento: {opt.Vencimento}");
-                options.CallOptions.Add(opt);
-            }
+            options.Add(opt);
+            
         }
         this.connection.Close();
         return options;

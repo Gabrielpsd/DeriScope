@@ -18,8 +18,6 @@ public static class ConfigManager
 
             File.WriteAllText(FilePath, json);
 
-            Console.WriteLine("Config file created. Please fill it and restart the application.");
-
             return defaultConfig;
         }
 

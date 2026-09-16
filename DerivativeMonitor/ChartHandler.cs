@@ -38,7 +38,6 @@ public static class ChartHandler
 
             var current = orderedRows[i];
             var next = orderedRows[i + 1];
-            Logger.Log($"Current PutValue: {current.PutValue}, Current CallValue: {next.CallValue }");
 
             //var chartRow = chartLookup.ElementAt(i).Value;
 
@@ -121,12 +120,10 @@ public static class ChartHandler
     {
         if (priceLine == null)
             return;
-        Logger.Log($"Updating price line with price: {price}");
 
         double position =
             GetPricePosition(chartLookup, price);
 
-        Logger.Log($"Calculated price line position: {position}");
         priceLine.X = position;
         priceLine.Text = $"{price}";
     }

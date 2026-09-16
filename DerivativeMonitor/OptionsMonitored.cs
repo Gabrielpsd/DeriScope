@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel;
+using System.Windows.Ink;
 using System.Windows.Media;
 
 /* this class represents the object that is used to mount the UI of the program*/
@@ -15,10 +16,10 @@ public class OptionsMonitored : INotifyPropertyChanged
     }
 
     // All the options will grouped by strike
-    public decimal Strike { get; set; }
+    private decimal _strike { get; set; }
 
     // CALL
-    public string? CallCodigo { get; set; }
+    private string? _callCodigo { get; set; }
 
     // topic is the identifier that the RTD server uses to update the data of the option,
     // it is generated when the RTD server receives the request to monitor a new option,
@@ -30,7 +31,7 @@ public class OptionsMonitored : INotifyPropertyChanged
 
     public Dictionary<string, string> CallTopics { get; set; } = new();
     // PUT
-    public string? PutCodigo { get; set; }
+    private string? _putCodigo { get; set; }
 
     // topic is the identifier that the RTD server uses to update the data of the option,
     // it is generated when the RTD server receives the request to monitor a new option,
@@ -42,10 +43,6 @@ public class OptionsMonitored : INotifyPropertyChanged
     public Dictionary<string, string> PutTopics { get; set; } = new();
 
     // Here are storaged all the keys that should be monitored by the RTD 
-
-    public bool IsAlert { get; set; } = false;
-
-    public System.Windows.Media.Brush AlertBrush { get; set; } = System.Windows.Media.Brushes.Transparent;
 
     public void UpdateCallParameter(
     string key,
@@ -65,11 +62,42 @@ public class OptionsMonitored : INotifyPropertyChanged
         OnPropertyChanged(nameof(PutParameters));
     }
 
-    public void UpdateAlertStatus(bool isAlert, System.Windows.Media.Brush alertBrush)
+    public decimal Strike
     {
-        IsAlert = isAlert;
-        AlertBrush = alertBrush;
-        OnPropertyChanged(nameof(IsAlert));
-        OnPropertyChanged(nameof(AlertBrush));
+        get => _strike;
+        set
+        {
+            if (_strike != value)
+            {
+                _strike = value;
+                OnPropertyChanged(nameof(Strike));
+            }
+        }
+    }
+
+    public string? CallCodigo
+    {
+        get => _callCodigo;
+        set
+        {
+            if (_callCodigo != value)
+            {
+                _callCodigo = value;
+                OnPropertyChanged(nameof(CallCodigo));
+            }
+        }
+    }
+
+    public string? PutCodigo
+    {
+        get => _putCodigo;
+        set
+        {
+            if (_putCodigo != value)
+            {
+                _putCodigo = value;
+                OnPropertyChanged(nameof(PutCodigo));
+            }
+        }
     }
 }

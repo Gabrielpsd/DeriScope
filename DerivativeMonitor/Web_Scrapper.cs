@@ -1,6 +1,7 @@
 ﻿using HtmlAgilityPack;
 using System.Globalization;
 using System.Net.Http;
+using static DerivativeMonitor.MainWindow;
 
 public static class Web_Scrapper
 {
@@ -25,7 +26,7 @@ public static class Web_Scrapper
         }
     }
 
-    public static string ExtractTags(string HTML, string tag)
+    public async static Task<string> ExtractTags(string HTML, string tag)
     {
         int start = HTML.IndexOf($"<{tag}>");
         int end = HTML.IndexOf($"</{tag}>");
@@ -38,7 +39,7 @@ public static class Web_Scrapper
         start += start + $"{tag}".Length; // jumping to the end of the opening tag
         return HTML.Substring(start, end - start);
     }
-    public static List<List<string>> ExtractTableById(string html, string tableId)
+    public async static Task<List<List<string>>> ExtractTableById(string html, string tableId)
     {
         var doc = new HtmlAgilityPack.HtmlDocument();
         doc.LoadHtml(html);
@@ -77,22 +78,20 @@ public static class Web_Scrapper
         return result;
     }
 
-    public static List<OptionData> MapToOptions(List<List<string>> table)
+    public async static Task<List<OptionData>> MapToOptions(List<List<string>> table, DataBaseManager _dataBase)
     {
+
         var result = new List<OptionData>();
 
         foreach (var row in table.Skip(1)) // skip header
         {
+            _dataBase.SaveOption(row[1], row[2], row[0], row[1], DateTime.Parse(row[3]), decimal.Parse(row[4], new CultureInfo("pt-BR")), row[5], row[6].Trim().ToUpper() == "SIM", row[7], "call");
+            
             var option = new OptionData
             {
-                ISIN = row[0],
-                Especificacao = row[1],
                 Codigo = row[2],
                 Vencimento = DateTime.Parse(row[3]),
                 PrecoExercicio = decimal.Parse(row[4], new CultureInfo("pt-BR")),
-                Referencia = row[5],
-                Protegida = row[6].Trim().ToUpper() == "SIM",
-                Estilo = row[7]
             };
 
             result.Add(option);

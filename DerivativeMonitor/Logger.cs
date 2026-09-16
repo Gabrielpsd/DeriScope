@@ -3,14 +3,12 @@
 public static class Logger
 {
     private static string _filePath = "debug.log";
-    private static Boolean LoggOptions = true;
     private static Boolean Logging = true;
 
     public static void configureLogging(bool LogOptions, bool logSteps, AppConfig config)
     {
         Logger.Log($"Logging configured. LogOptions: {LogOptions}, LogSteps: {logSteps}");
 
-        LoggOptions = LogOptions;
         Logging = logSteps;
         _filePath = config.LogFileName + ".log";
     }
@@ -24,20 +22,4 @@ public static class Logger
         File.AppendAllText(_filePath, logLine + Environment.NewLine);
     }
 
-    public static void LogOptions(this IEnumerable<OptionData> options, string label)
-    {
-        if (LoggOptions is false)
-            return;
-
-        var list = options as IList<OptionData> ?? options.ToList();
-
-        Logger.Log($"--- {label} ({list.Count} items) ---");
-
-        foreach (var option in list)
-        {
-            Logger.Log($"{option.Codigo.ToString()}|{option.PrecoExercicio.ToString()}|{option.Vencimento.ToString()}");
-        }
-
-        Logger.Log($"--- End of {label} ---");
-    }
 }

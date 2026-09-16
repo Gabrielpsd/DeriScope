@@ -87,7 +87,7 @@ public class RTDClient
                 topicId = ConnectSide(option, isCall: false, _appConfig, _chartLookup, topicId, monitoredTopics);
 
         }
-
+        Logger.Log("Verifying chart lookup after:" + _chartLookup.Count);
         lastConnectedTopic = topicId;
     }
 
@@ -163,7 +163,7 @@ public class RTDClient
         Dictionary<int, string> topicsReturned = new Dictionary<int, string>();
         int topicsToRefresh = 0;
 
-        object[,]? result_justCallingRefresh = (object[,]?)_rtdServer.RefreshData(ref topicsToRefresh);
+        object[,] result_justCallingRefresh = (object[,])_rtdServer.RefreshData(ref topicsToRefresh);
         Logger.Log("Called RefreshData with topic ID: 0 to refresh all topics, RTD result: " + result_justCallingRefresh);
         Logger.Log($"Number of topics to refresh: {topicsToRefresh}");
         if (topicsToRefresh > 0)
@@ -176,18 +176,20 @@ public class RTDClient
                     object topicId = Convert.ToInt32(result_justCallingRefresh[0, columnIndex]);
                     object topicValue = result_justCallingRefresh[1, columnIndex]?.ToString() ?? "";
 
-                    Logger.Log($"Received topic ID: {topicId}, value: {topicValue} from RefreshData");
-
                     if (_topicBindings.TryGetValue((int)topicId, out var binding))
                     {
                         if (binding.IsCall)
                         {
+#pragma warning disable CS8604 // Possible null reference argument.
                             binding.Option.CallParameters[binding.Parameter] = FieldFormatter.Format(topicValue.ToString(), _appConfig.CallFieldFormats[binding.Parameter]);
+#pragma warning restore CS8604 // Possible null reference argument.
                             Logger.Log($"Updated option {binding.Option.CallCodigo} CallParameters[{binding.Parameter}] with value: {binding.Option.CallParameters[binding.Parameter]}");
                         }
                         else
                         {
+#pragma warning disable CS8604 // Possible null reference argument.
                             binding.Option.PutParameters[binding.Parameter] = FieldFormatter.Format(topicValue.ToString(), _appConfig.PutFieldFormats[binding.Parameter]);
+#pragma warning restore CS8604 // Possible null reference argument.
                             Logger.Log($"Updated option {binding.Option.PutCodigo} PutParameters[{binding.Parameter}] with value: {binding.Option.PutParameters[binding.Parameter]}");
                         }
                     }
@@ -206,11 +208,11 @@ public class RTDClient
 
     public class TopicBinding
     {
-        public OptionsMonitored Option { get; set; }
+        public OptionsMonitored? Option { get; set; }
 
         public bool IsCall { get; set; }
 
-        public string Parameter { get; set; }
+        public string? Parameter { get; set; }
     }
 }
 public class RtdUpdateEvent : IRTDUpdateEvent
@@ -233,16 +235,4 @@ public class RtdUpdateEvent : IRTDUpdateEvent
     {
         Count++;
     }
-}
-public class MarketData
-{
-    public string? Ticker { get; set; }
-
-    public string? OpenPrice { get; set; }
-
-    public string? ClosePrice { get; set; }
-
-    public string? LastPrice { get; set; }
-
-    public string? MovingAverage { get; set; }
 }
