@@ -3,15 +3,25 @@ using ScottPlot.LayoutEngines;
 using ScottPlot.Plottables;
 using ScottPlot.WPF;
 using System.Globalization;
-public static class ChartHandler
+public class ChartHandler
 {
-    public static void BuildChart(Dictionary<decimal, ChartRow> chartLookup, AppConfig _appConfig, WpfPlot wpfPlot, StockData stockData , ref VerticalLine priceLine)
+    public VerticalLine? PriceLine { get; private set; }
+
+    private List<ChartRow>? InternalLookUp; 
+
+    public async Task BuildChart(Dictionary<decimal, ChartRow> chartLookup, AppConfig _appConfig, WpfPlot wpfPlot, StockData stockData)
     {
         wpfPlot.Plot.Clear();
         string[] categorieNames = { "Put", "Call" };
         string[] categoryColours = { _appConfig.Colors.ChartPut, _appConfig.Colors.ChartCall };
-        double[] putValues = chartLookup.Values.Select(row => row.PutValue).ToArray();
-        double[] callValues = chartLookup.Values.Select(row => row.CallValue).ToArray();
+
+        InternalLookUp = chartLookup
+                .OrderBy(x => x.Key)
+                .Select(x => x.Value)
+                .ToList();
+
+        double[] putValues = [.. chartLookup.Values.Select(row => row.PutValue)];
+        double[] callValues = [.. chartLookup.Values.Select(row => row.CallValue)];
 
         var putSeries = wpfPlot.Plot.Add.Bars(putValues);
         putSeries.LegendText = "Put";
@@ -25,49 +35,42 @@ public static class ChartHandler
                 NumberStyles.Any,
                 new CultureInfo("pt-BR"),
                 out decimal lastPriceDecimal);
-
-        var orderedRows = chartLookup
-                .OrderBy(x => x.Key)
-                .Select(x => x.Value)
-                .ToList();
         
-        Logger.Log("orded rows:" + orderedRows.Count);
+        Logger.Log("orded rows:" + InternalLookUp.Count);
 
-        for (int i = 0; i < orderedRows.Count -1; i++)
+        for (int i = 0; i < InternalLookUp.Count -1 ; i++)
         {
 
-            var current = orderedRows[i];
-            var next = orderedRows[i + 1];
+            var current = InternalLookUp[i];
+            var next = InternalLookUp[i + 1];
 
             //var chartRow = chartLookup.ElementAt(i).Value;
-
             tickGen.AddMajor(i, FieldFormatter.Format(current.Strike.ToString(), _appConfig.Chart.FieldFormatChart));
 
             if (current.Strike <= lastPriceDecimal &&
                  next.Strike >= lastPriceDecimal)
             {
-                if (priceLine == null)
+
+                decimal range = next.Strike - current.Strike;
+
+                double position = i;
+
+                if (range > 0)
                 {
-                    decimal range = next.Strike - current.Strike;
-
-                    double position = i;
-
-                    if (range > 0)
-                    {
-                        position += (double)
-                            ((lastPriceDecimal - current.Strike) / range);
-                    }
-                    Logger.Log($"Price line position: {position}");
-                    tickGen.AddMajor(
-                            position,
-                            FieldFormatter.Format(lastPriceDecimal.ToString(), _appConfig.Chart.FieldFormatChart));
-
-                    priceLine = wpfPlot.Plot.Add.VerticalLine(position);
-
-                    priceLine.Text = $"{stockData.LastPrice}";
-                    priceLine.Color = new   ScottPlot.Color(_appConfig.Colors.ChartActualPrice);
-                    priceLine.LabelAlignment = Alignment.MiddleRight;
+                    position += (double)
+                        ((lastPriceDecimal - current.Strike) / range);
                 }
+                Logger.Log($"Price line position: {position}");
+                tickGen.AddMajor(
+                        position,
+                        FieldFormatter.Format(lastPriceDecimal.ToString(), _appConfig.Chart.FieldFormatChart));
+
+                PriceLine = wpfPlot.Plot.Add.VerticalLine(position);
+
+                PriceLine.Text = $"{stockData.LastPrice}";
+                PriceLine.Color = new   ScottPlot.Color(_appConfig.Colors.ChartActualPrice);
+                PriceLine.LabelAlignment = Alignment.MiddleRight;
+
             }
         }
        
@@ -79,8 +82,13 @@ public static class ChartHandler
 
         wpfPlot.Plot.ShowLegend(Alignment.UpperLeft);
         wpfPlot.Plot.Axes.Margins(bottom: 0);
-        var limits = wpfPlot.Plot.Axes.GetLimits();
-        wpfPlot.Plot.Axes.SetLimitsY(0, top: limits.Top * 1.05);
+
+        var yAxis = wpfPlot.Plot.Axes.Left;
+
+        yAxis.TickGenerator =
+            new ScottPlot.TickGenerators.NumericFixedInterval(
+                _appConfig.Chart.ChartWidth);
+
         RefreshChart(wpfPlot);
     }
     public static void RefreshChart(WpfPlot wpfPlot)
@@ -88,17 +96,13 @@ public static class ChartHandler
         wpfPlot.Refresh();
     }
 
-    private static double GetPricePosition(Dictionary<decimal, ChartRow> chartLookup, decimal price)
+    private double GetPricePosition(decimal price)
     {
-        var rows = chartLookup
-            .OrderBy(x => x.Key)
-            .Select(x => x.Value)
-            .ToList();
 
-        for (int i = 0; i < rows.Count - 1; i++)
+        for (int i = 0; i < InternalLookUp.Count - 1; i++)
         {
-            var current = rows[i];
-            var next = rows[i + 1];
+            var current = InternalLookUp[i];
+            var next = InternalLookUp[i + 1];
 
             if (current.Strike <= price &&
                 next.Strike >= price)
@@ -114,18 +118,17 @@ public static class ChartHandler
         return 0;
     }
 
-    public static void UpdatePriceLine(
-    decimal price,
-    Dictionary<decimal, ChartRow> chartLookup, ref VerticalLine priceLine)
+    public void UpdatePriceLine(
+    decimal price)
     {
-        if (priceLine == null)
+        if (PriceLine == null)
             return;
 
         double position =
-            GetPricePosition(chartLookup, price);
+            GetPricePosition(price);
 
-        priceLine.X = position;
-        priceLine.Text = $"{price}";
+        PriceLine.X = position;
+        PriceLine.Text = $"{price}";
     }
 
 
