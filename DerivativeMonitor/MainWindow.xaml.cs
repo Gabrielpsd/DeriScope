@@ -20,37 +20,29 @@ namespace DerivativeMonitor
     /// </summary>
     public partial class MainWindow : System.Windows.Window
     {
-        private CancellationTokenSource _cts = new();
-        private AppConfig _appConfig = new AppConfig();
+        private int _lastHoverIndex = -1;                 // for the performance guard below
         private bool loopingIsRunning = false;
-        private ObservableCollection<OptionsMonitored> _optionsMonitored { get; set; } = new();
-        private RTDClient? _rtdClient = new RTDClient();
-        private StockData _stockData = new();
-        // when I update the _chartLookup, automatically update the _chartRows collection that is binded to the chart,
-        // so I can keep the chart updated with the latest data without having to manually refresh it
-
+        private ScottPlot.Plottables.Crosshair _hoverCrosshair;
+        public  ObservableCollection<Alert> _alerts { get; } = new();
+        private AlertWindow? _alertWindow;
+        private AppConfig _appConfig = new AppConfig();
+        private List<BackgroundOption> _backgroundOptionList = new();
+        
         //I'll only handle and modify the _charLookup
         private Dictionary<decimal, ChartRow> _chartLookup = new();
-        private VerticalLine? _priceLine = null;
+        private ChartHandler _chartHandler = new();
+        private DataBaseManager _dataBaseManager = new DataBaseManager();
         // the _chartRows is the collection that is binded to the chart, so when I update it, the chart will be updated automatically
         private ObservableCollection<ChartRow> _chartRows = new();
-
-        public  ObservableCollection<Alert> _alerts { get; } = new();
-        public record LoadStatus(int Percent, string Message);
-
-        // this crosshair is used to show the values of the bars when the user hover them, it is created once and updated with the new values when the user hover another bar, this way I can avoid creating and destroying multiple crosshairs that can cause performance issues
-        private ScottPlot.Plottables.Crosshair _hoverCrosshair;
-        private List<ChartRow> _orderedChartRows = new(); // bars in the same order as the chart
-        private int _lastHoverIndex = -1;                 // for the performance guard below
-        private DataBaseManager _dataBaseManager = new DataBaseManager();
-
-        private List<BackgroundOption> _backgroundOptionList = new();
-
-        private AlertWindow? _alertWindow;
-
+        private CancellationTokenSource _cts = new();
+        private ObservableCollection<OptionsMonitored> _optionsMonitored { get; set; } = new();
         SoundPlayer player = new SoundPlayer("Assets/Sounds/alert.wav");
-
+        private List<ChartRow> _orderedChartRows = new(); // bars in the same order as the chart
+        private RTDClient? _rtdClient = new RTDClient();
         private SpeechService _speechService = new SpeechService();
+        private StockData _stockData = new();
+
+        public record LoadStatus(int Percent, string Message);
         public MainWindow()
         {
             InitializeComponent();
@@ -194,6 +186,9 @@ namespace DerivativeMonitor
                 catch (Exception ex)
                 {
                     Logger.Log("Load pipeline error: " + ex.Message);
+                    Logger.Log("Exception: " + ex.InnerException);
+                    Logger.Log("Exception: " + ex.StackTrace);
+
                     LoadingStatusText.Text = "Erro ao carregar: " + ex.Message;
                     await Task.Delay(2500);
                 }
@@ -215,11 +210,11 @@ namespace DerivativeMonitor
                 ConfigManager.Save(draft);
                 _appConfig = draft;
                 ApplySettings();
-                setColours(_appConfig);
+                SetColours(_appConfig);
             }
         }
 
-        private async Task handleRtdupdates(Dictionary<int,string> topicsToHandle)
+        private async Task HandleRtdupdates(Dictionary<int,string> topicsToHandle)
         {
 
             foreach(var topic in topicsToHandle)
@@ -237,7 +232,7 @@ namespace DerivativeMonitor
                     NumberStyles.Any,
                     new CultureInfo("pt-BR"),
                     out decimal lastPriceDecimal);
-                    ChartHandler.UpdatePriceLine(lastPriceDecimal, _chartLookup, ref _priceLine);
+                    _chartHandler.UpdatePriceLine(lastPriceDecimal);
                     ChartHandler.RefreshChart(WpfPlot1);
                     LabelClose.Content = _stockData.LastPrice;
                 }
@@ -256,8 +251,10 @@ namespace DerivativeMonitor
                             _dataBaseManager.GetOptionHistoryVariation(backgroundOption, cutOffDate.Value); // Example cutoff time
 
                             double Zcore = (topicValueDouble - backgroundOption.average) / Math.Sqrt(backgroundOption.variance);
+                            Logger.Log($"Variance {backgroundOption.variance} Average {backgroundOption.average} at cutoff {cutOffDate.Key}: {topicValueDouble}");
+                            Logger.Log($"Zcore for option {backgroundOption.optionTicker} of stock {backgroundOption.stock} at cutoff {cutOffDate.Key}: {Zcore}");
 
-                            if(Zcore > _appConfig.AlertControl.StandardDeviation)
+                            if (Zcore > _appConfig.AlertControl.StandardDeviation)
                             {
                                 if(_appConfig.AlertControl.EnableSoundAlert)
                                 {
@@ -286,7 +283,7 @@ namespace DerivativeMonitor
                             }
                         }
 
-                        _dataBaseManager.SaveOptionHistory(backgroundOption);
+                        await _dataBaseManager.SaveOptionHistory(backgroundOption);
                     }
 
                 }
@@ -307,14 +304,13 @@ namespace DerivativeMonitor
             //RTDClient RtdClientObj = new RTDClient();
             _appConfig = ConfigManager.Load();
             ConfigManager.Validate(_appConfig);
-            Logger.configureLogging(_appConfig.debugOptions, _appConfig.debugSteps, _appConfig);
+            Logger.configureLogging(_appConfig.debugSteps, _appConfig);
             Logger.Log("Configuration loaded successfully.");
             Logger.Log("Configuration validated successfully. Ticker: " + _appConfig.Ticker);
-            Logger.Log($"Configuration loaded: {JsonSerializer.Serialize(_appConfig, new JsonSerializerOptions { WriteIndented = true })}");
-            
+
             TickerInput.Text = _appConfig.Ticker;
 
-            Logger.Log("Options data populated successfully for ticker: " + _appConfig.Ticker);
+            Logger.Log("Inicializando Banco de dados" + _appConfig.Ticker);
             _dataBaseManager.Initialize(_appConfig.DatabasePath);
             
         }
@@ -358,10 +354,13 @@ namespace DerivativeMonitor
 
             progress.Report(new LoadStatus(30, "Salvando opções no banco de dados"));
 
+            _dataBaseManager.SoftDeleteOptions(_appConfig.Ticker);
+
             var callOptions = await OptionMapper.extractCallDataFromHTMLAsync(data, _appConfig.CallOptionTableOnWeb, _dataBaseManager);
             var putOptions = await OptionMapper.extractPutDataFromHTMLAsync(data, _appConfig.PutOptionTableOnWeb, _dataBaseManager);
 
-            if(callOptions.Count == 0 || putOptions.Count == 0)
+            // to perform a performatic softdelete properly, I'll delete all the ones that are active, and during the creation I activate the ones that are still valid again
+            if (callOptions.Count == 0 || putOptions.Count == 0)
             {
                 Logger.Log("Failed to populate option object.");
                 string lastSuccessfullWebScrapping = _dataBaseManager.getLastSuccessfullWebScrapping(_appConfig.Ticker);
@@ -385,9 +384,7 @@ namespace DerivativeMonitor
             // 4) Connect topics (heavy COM) on a background thread — this is what used to freeze
             progress.Report(new LoadStatus(60, "Conectando dados ao RTD..."));
             _chartLookup.Clear();
-            Logger.Log("Verifying chart lookup before RTd:"+ _chartLookup.Count);
             await Task.Run(() => _rtdClient.ConnectDataToRTd(rows, _appConfig, _chartLookup, _stockData, _backgroundOptionList));
-            Logger.Log("Verifying chart lookup outside RTd:" + _chartLookup.Count);
 
             // 5) Fill the UI — we are back on the UI thread after the await, so this is safe
             progress.Report(new LoadStatus(65, "Preenchendo a grade e o gráfico..."));
@@ -399,11 +396,9 @@ namespace DerivativeMonitor
             OptionsGrid.ItemsSource = _optionsMonitored;
             LabelClose.Content = _stockData.LastPrice;
             LabelOpening.Content = _stockData.OpeningPrice;
-            Logger.Log("Stock Data" + _stockData);
-#pragma warning disable CS8601 // Possible null reference assignment.
-            _priceLine = null;
-            ChartHandler.BuildChart(_chartLookup, _appConfig, WpfPlot1, _stockData, ref _priceLine);
-#pragma warning restore CS8601 // Possible null reference assignment.
+
+            _ = _chartHandler.BuildChart(_chartLookup, _appConfig, WpfPlot1, _stockData);
+            
             _orderedChartRows = _chartLookup.OrderBy(x => x.Key).Select(x => x.Value).ToList(); ;
 
             _hoverCrosshair = WpfPlot1.Plot.Add.Crosshair(0, 0);
@@ -426,10 +421,10 @@ namespace DerivativeMonitor
 
             int tempCount = 1;
 
-            foreach (var stock in _appConfig.AlertControl.StocksToMonitor)
+             foreach (var stock in _appConfig.AlertControl.StocksToMonitor)
             {
                 List<BackgroundOption> auxList = new List<BackgroundOption>();
-                progress.Report(new LoadStatus(70, "Connectando ativo " + stock.Symbol));
+                progress.Report(new LoadStatus(70, "Conectando ativo " + stock.Symbol));
                 Logger.Log($"Loading background options for stock: {stock}");
                 auxList = await ProgramInterface.MapsBackgroundOptions(stock.Symbol, _appConfig,_dataBaseManager);
                 if(auxList != null && auxList.Count > 0)
@@ -450,13 +445,10 @@ namespace DerivativeMonitor
 
             progress.Report(new LoadStatus(72, $"Conectando dados ao RTD 0/{tempOptionList.Count}"));
             tempCount = 1;
-            double auxiliar = 8 / tempOptionList.Count;
-
             foreach (var option in tempOptionList)
             {
                 await _rtdClient.ConnectBackgroundOptions(_appConfig, option);
-                progress.Report(new LoadStatus(int.Parse(Math.Round(72 + auxiliar).ToString()), $"Conectando dados ao RTD {tempCount}/{tempOptionList.Count}"));
-                tempCount++;
+
             }
 
             Logger.Log("Background options connected.");
@@ -469,10 +461,8 @@ namespace DerivativeMonitor
 
             foreach (var option in _backgroundOptionList)
             {
-                _dataBaseManager.SaveOptionHistory(option);
-                progress.Report(new LoadStatus(int.Parse(Math.Round(80+auxiliar).ToString()), $"Atualizando Series historicas {tempCount}/{_backgroundOptionList.Count}"));
-                _dataBaseManager.GetOptionHistoryVariation(option, System.DateTime.Parse(_appConfig.AlertControl.StartDate, CultureInfo.InvariantCulture)); // Example cutoff time
-                tempCount++;
+                await _dataBaseManager.SaveOptionHistory(option);
+               _dataBaseManager.GetOptionHistoryVariation(option, System.DateTime.Parse(_appConfig.AlertControl.StartDate, CultureInfo.InvariantCulture)); // Example cutoff time
             }
 
             // 8) Start the loops for RTD and Scraper
@@ -494,22 +484,20 @@ namespace DerivativeMonitor
             {
                 Logger.Log("RTD server is currently inactive. Activating...");
                 await _rtdClient.InitializeRtdServerAsync();
-                ConnectServerButtonTextBlock.Text = "\uE7E8";
-                ConnectServerButtonTextBlock.Foreground = new SolidColorBrush(Colors.Green);
+                ConnectServerButtonTextBlock.Text = "\uE704";
             }
             else
             {
                 Logger.Log("RTD server is currently active. Deactivating...");
                 await _rtdClient.StopAsync();
-                ConnectServerButtonTextBlock.Text = "\uF5E7";
-                ConnectServerButtonTextBlock.Foreground = new SolidColorBrush(Colors.Black);
+                ConnectServerButtonTextBlock.Text = "\uE7E8";
                 StopLoops();
             }
 
 
         }
 
-        private void setColours(AppConfig _appConfig)
+        private void SetColours(AppConfig _appConfig)
         {
             LabelClose.Foreground = ColorHelper.FromHex(_appConfig.Colors.ClosePrice);
             LabelOpening.Foreground = ColorHelper.FromHex(_appConfig.Colors.OpenPrice);
@@ -592,7 +580,7 @@ namespace DerivativeMonitor
                         Logger.Log($"Topics returned: {string.Join(", ", topicsReturned.Select(kvp => $"[{kvp.Key}: {kvp.Value}]"))}");
                         if (topicsReturned != null && topicsReturned.Count > 0 )
                         {
-                            _ = handleRtdupdates(topicsReturned);
+                            _ = HandleRtdupdates(topicsReturned);
                         }
                     }
 
@@ -611,8 +599,23 @@ namespace DerivativeMonitor
 
             while (!_cts.Token.IsCancellationRequested)
             {
+                await Task.Delay(TimeSpan.FromMinutes(_appConfig.ScraperIntervalMinutes), _cts.Token);
+                
                 try
                 {
+                    LoadingProgressBar.Value = 0;
+                    LoadingOverlay.Visibility = Visibility.Visible;
+
+                    // Created on the UI thread → every Report(...) runs this lambda back on the UI thread,
+                    // even when called from inside Task.Run.
+                    var progress = new Progress<LoadStatus>(status =>
+                    {
+                        LoadingProgressBar.Value = status.Percent;
+                        LoadingStatusText.Text = status.Message;
+                    });
+
+                    await RunLoadPipelineAsync(progress);
+                    LoadingOverlay.Visibility = Visibility.Hidden;
                     Logger.Log("Refreshing options from website...");
 
                 }
@@ -621,7 +624,6 @@ namespace DerivativeMonitor
                     Logger.Log("Scraper loop error: " + ex.Message);
                 }
 
-                await Task.Delay(TimeSpan.FromMinutes(_appConfig.ScraperIntervalMinutes), _cts.Token);
             }
         }
 

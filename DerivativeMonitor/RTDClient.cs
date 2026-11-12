@@ -138,8 +138,8 @@ public class RTDClient
             {
                 var chartRow = chartLookup[option.Strike];
                 chartRow.Parameter = parameter.Value;
-                if (isCall) chartRow.CallValue = Convert.ToDouble(formatted);
-                else chartRow.PutValue = Convert.ToDouble(formatted);
+                if (isCall) chartRow.CallValue = Convert.ToDouble(raw?.ToString());
+                else chartRow.PutValue = Convert.ToDouble(raw?.ToString());
             }
 
             _topicBindings[topicId] = new TopicBinding

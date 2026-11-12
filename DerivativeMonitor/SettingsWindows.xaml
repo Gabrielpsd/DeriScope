@@ -83,6 +83,10 @@
                                 <local:LabelHelper LabelText="Título do eixo Y" Margin="0 8 0 0"
          HelpText="Rótulo do eixo vertical."/>
                                 <TextBox Text="{Binding Chart.YAxisTitle}"/>
+
+                                <local:LabelHelper LabelText="Escala do gráfico" Margin="0 8 0 0"
+HelpText="Rótulo do eixo vertical."/>
+                                <TextBox Text="{Binding Chart.ChartWidth}"/> 
                             </StackPanel>
                         </GroupBox>
                         <GroupBox Margin="6">
@@ -105,10 +109,6 @@
                                 <local:LabelHelper LabelText="Nome do arquivo de log" HelpText="Arquivo gerado durante a depuração"   Margin="0 8 0 0"/>
                                 <TextBox Text="{Binding LogFileName}"/>
 
-                                <CheckBox  IsChecked="{Binding debugOptions}" Margin="0 8 0 0">
-                                    <local:LabelHelper LabelText="Logs detalhados (debugOptions)" HelpText="Imprime as opções retornadas no webScrapper"  />
-
-                                </CheckBox>
                                 <CheckBox IsChecked="{Binding debugSteps}" Margin="0 6 0 0">
                                     <local:LabelHelper LabelText="Logs de passos (debugSteps)" HelpText="Imprime no arquivo de log cada etapa que esta sendo executada"   Margin="0 0 0 0"/>
                                 </CheckBox>

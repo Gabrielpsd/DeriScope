@@ -87,6 +87,21 @@ public class DataBaseManager
         connection.Close();
     }
 
+    public void SoftDeleteOptions(string ticket)
+    {
+        this.connection.Open();
+        var cmd = this.connection.CreateCommand();
+        cmd.CommandText = @"
+            UPDATE Options
+            SET Ativo = 0, DeletadoEm = $now
+            WHERE Ticket = $ticket AND Ativo = 1 
+        ";
+        cmd.Parameters.AddWithValue("$ticket", ticket);
+        cmd.Parameters.AddWithValue("$now", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+        cmd.ExecuteNonQuery();
+        this.connection.Close();
+    }
+
     public string getLastSuccessfullWebScrapping(string ticket)
     {
         this.connection.Open();
@@ -100,8 +115,9 @@ public class DataBaseManager
         using var reader = cmd.ExecuteReader();
         if (reader.Read())
         {
+            var lastSuccessfullWebScrapping = reader.GetString(0);
             this.connection.Close();
-            return reader.GetString(0);
+            return lastSuccessfullWebScrapping;
         }
         else
         {
@@ -167,6 +183,7 @@ public class DataBaseManager
                 CriadoEm = excluded.CriadoEm,
                 DeletadoEm = excluded.DeletadoEm;
             ";
+
         cmd.Parameters.AddWithValue("$ticket", ticket);
         cmd.Parameters.AddWithValue("$codigo", codigo);
         cmd.Parameters.AddWithValue("$isin", ISIN);
@@ -218,7 +235,7 @@ public class DataBaseManager
         return options;
     }
 
-    public void SaveOptionHistory(BackgroundOption backgroundOption)
+    public async Task SaveOptionHistory(BackgroundOption backgroundOption)
     {
         this.connection.Open();
         var cmd = this.connection.CreateCommand();

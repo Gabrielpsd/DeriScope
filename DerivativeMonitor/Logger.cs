@@ -5,9 +5,9 @@ public static class Logger
     private static string _filePath = "debug.log";
     private static Boolean Logging = true;
 
-    public static void configureLogging(bool LogOptions, bool logSteps, AppConfig config)
+    public static void configureLogging(bool logSteps, AppConfig config)
     {
-        Logger.Log($"Logging configured. LogOptions: {LogOptions}, LogSteps: {logSteps}");
+        Logger.Log($"Logging configured. LogSteps: {logSteps}");
 
         Logging = logSteps;
         _filePath = config.LogFileName + ".log";

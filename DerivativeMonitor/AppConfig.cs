@@ -32,8 +32,6 @@ public class AppConfig
     // intervalo de tempo em minutos para buscar novas opções, ex: 60 para buscar novas opções a cada 60 minutos.
     public int ScraperIntervalMinutes { get; set; } = 60;
 
-    // opção para habilitar ou desabilitar logs das opções (opções retornadas no WebScraping), ex: true para habilitar logs detalhados, false para desabilitar.
-    public bool debugOptions { get; set; } = false;
 
     // opção para habilitar ou desabilitar logs dos passos do processo (início do scraping, início da atualização, etc.), ex: true para habilitar logs detalhados, false para desabilitar.
     public bool debugSteps { get; set; } = false;
@@ -88,6 +86,8 @@ public class ChartSettings {
     public string XAxisTitle { get; set; } = "Preço de Strike";
 
     public string YAxisTitle { get; set; } = "Quantidade de contratos";
+
+    public double ChartWidth { get; set; } = 800;
 
 }
 
